@@ -5,93 +5,157 @@
 // @homepageURL https://github.com/binki/binki-atlassian-jira-unmangle-edit
 // @require https://github.com/binki/binki-userscript-delay-async/raw/252c301cdbd21eb41fa0227c49cd53dc5a6d1e58/binki-userscript-delay-async.js
 // @require https://github.com/binki/binki-userscript-when-element-changed-async/raw/88cf57674ab8fcaa0e86bdf5209342ec7780739a/binki-userscript-when-element-changed-async.js
-// @require https://github.com/binki/binki-userscript-when-element-query-selector-async/raw/0a9c204bdc304a9e82f1c31d090fdfdf7b554930/binki-userscript-when-element-query-selector-async.js
 // ==/UserScript==
 
 (async () => {
-  const descriptionTextBox = await whenElementQuerySelectorAsync(document.body, '[data-component-selector="jira.issue-view.common.inline-edit.compact-wrapper-control"] .ak-renderer-document');
-  if ([...descriptionTextBox.querySelectorAll('a')].find(a => a.href && a.href !== unmangleLink(a.href))) {
-    console.log('detected links to fix in description');
-    
-    // Click on the description to start editing it.
-    // Not sure why both the method and two events are required to make this work, but it does work.
-    descriptionTextBox.click();
-    descriptionTextBox.dispatchEvent(new MouseEvent('mousedown', {
-      bubbles: true,
-      cancelable: true,
-    }));
-    descriptionTextBox.dispatchEvent(new MouseEvent('click', {
-      bubbles: true,
-      cancelable: true,
-    }));
-    console.log('clicked on the description to start editing it');
-    
-    await editOpenedTextAreaAsync();
-  } else {
-    console.log('no links to fix in description');
-  }
-  
-  // Continuously monitor the comment listing since new comments may automatically populate.
+  const key = /[^?]*\/([A-Z]+-[0-9]+)(?:$|\?)/.exec(document.documentURI)[1];
+  if (!key) return;
   while (true) {
-    const commentsList = await whenElementQuerySelectorAsync(document.body, '[data-testid="issue.activity.comments-list"]');
-    
-    for (const commentContent of document.querySelectorAll('[data-testid^="issue-comment-base.ui.comment.ak-comment"][data-testid$="-content"]')) {
-      if ([...commentContent.querySelectorAll('a')].find(a => a.href && a.href !== unmangleLink(a.href))) {
-        console.log('found comment or note requiring edits', commentContent);
-        
-        const commentContainer = commentContent.closest('[data-testid^="comment-base-item-"]');
-        const editButton = commentContainer.querySelector('[data-testid$="footer"] button');
-        console.log('clicking Edit on comment (hopefully not Delete!)');
-        editButton.click();
-        console.log('clicked Edit');
-        await editOpenedTextAreaAsync();
+    const issue = await (await assertFetch(new URL(`/rest/api/3/issue/${encodeURIComponent(key)}`, document.documentURI))).json();
+    let changeMade = false;
+    if (unmangleAtlassianDocument(issue.fields.description)) {
+      for (const [requestNoNotify, lastTry] of [
+        [true, false], 
+        [false, true],
+      ]) {
+        try {
+          await assertFetch(new URL(`/rest/api/3/issue/${encodeURIComponent(key)}?${requestNoNotify ? 'notifyUsers=false&' : ''}`, document.documentURI), {
+            body: JSON.stringify({
+              update: {
+                description: [
+                  {
+                    set: issue.fields.description,
+                  },
+                ],
+              },
+            }),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            method: 'PUT',
+          });
+          changeMade = true;
+        } catch (ex) {
+          if (lastTry) throw ex;
+        }
       }
     }
-    
-    // Wait for the next change.
-    await whenElementChangedAsync(commentsList);
+    for (const comment of issue.fields.comment.comments) {
+      if (unmangleAtlassianDocument(comment.body)) {
+        for (const [requestNoNotify, lastTry] of [
+          [true, false],
+          [false, true],
+        ]) {
+          try {
+            await assertFetch(`${comment.self}?${requestNoNotify ? 'notifyUsers=false&' : ''}`, {
+              body: JSON.stringify({
+                body: comment.body,
+              }),
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              method: 'PUT',
+            });
+            changeMade = true;
+          } catch (ex) {
+            if (lastTry) throw ex;
+          }
+        }
+      }
+    }
+    if (changeMade) {
+      location.reload();
+    }
+    await Promise.all([delayAsync(60000), whenElementChangedAsync(document.querySelector('[data-testid="issue.activity.comments-list"]'))]);
   }
 })();
 
-async function editOpenedTextAreaAsync() {
-  console.log('waiting for editable textarea to appear…');
-  // Wait for the editable text to appear.
-  const descriptionEditorTextArea = await whenElementQuerySelectorAsync(document.body, '#ak-editor-textarea');
-
-  console.log('editing…');
-  // This is complicated. We have to clear and re-append everything. Otherwise the editor fails at seeing our edits.
-  const elements = [...descriptionEditorTextArea.childNodes];
-  for (const element of elements) {
-    element.remove();
+async function assertFetch(url, options) {
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    console.log(response);
+    throw new Error(`Request to ${url} not OK: ${response.status} ${await response.text()}`);
   }
-  // This is necessary somehow
-  await delayAsync(0);
-  for (const element of elements) {
-    // Cannot use querySelector in detached elements (at least it wasn’t working), so have to check all children manually.
-    for (const child of element.childNodes) {
-      console.log('considering child node', child.tagName, child.href, child);
-      if ((child.tagName || '').toLowerCase() !== 'a') continue;
-      if (!child.href) continue;
-      const newHref = unmangleLink(child.href);
-      if (child.href === newHref) continue;
-      console.log(`Replacing link “${child.href}” with “${newHref}”.`);
-      child.href = newHref;
+  return response;
+}
+
+function unmangleAtlassianDocument(document) {
+  let modified = false;
+  try {
+    switch (document.type) {
+      case 'blockquote':
+      case 'bulletList':
+      case 'codeBlock':
+      case 'heading':
+      case 'listItem':
+      case 'mediaSingle':
+      case 'orderedList':
+      case 'panel':
+      case 'doc':
+      case 'expand':
+      case 'paragraph':
+      case 'table':
+      case 'tableRow':
+      case 'tableCell':
+      case 'tableHeader':
+        for (const contentItem of document.content) {
+          if (unmangleAtlassianDocument(contentItem)) {
+            modified = true;
+          }
+        }
+        break;
+      case 'inlineCard':
+        if (document.attrs && document.attrs.url) {
+          const newUrl = unmangleLink(document.attrs.url);
+          if (newUrl !== document.attrs.url) {
+            console.log(`Replacing inlineCard URL ${document.attrs.url} with ${newUrl}`);
+            document.attrs.url = newUrl;
+            modified = true;
+          }
+        }
+        break;
+      case 'emoji':
+      case 'hardBreak':
+      case 'media':
+      case 'mediaGroup':
+      case 'mention':
+      case 'rule':
+        break;
+      case 'text':
+        for (const mark of document.marks || []) {
+          switch (mark.type) {
+            case 'border':
+            case 'code':
+            case 'em':
+            case 'strike':
+            case 'strong':
+            case 'subsup':
+            case 'textColor':
+            case 'underline':
+              break;
+            case 'link':
+              if (mark.attrs.href) {
+                const newHref = unmangleLink(mark.attrs.href);
+                if (newHref !== mark.attrs.href) {
+                  modified = true;
+                  console.log(`Replacing link “${mark.attrs.href}” with “${newHref}”.`);
+                  mark.attrs.href = newHref;
+                }
+              }
+              break;
+            default:
+              throw new Error(`Unrecognized mark type: ${mark.type}`);
+          }
+        }
+        break;
+      default:
+        throw new Error(`Unrecognized node type: ${document.type}`);
     }
-    descriptionEditorTextArea.append(element);
+  } catch (ex) {
+    console.log('error editing document', document);
+    throw ex;
   }
-  // Wait for the new stuff to be acknowledged by the WYSIWYG editor
-  await delayAsync(0);
-  // Remove the empty p that was added by the editor
-  while (true) {
-    const firstP = descriptionEditorTextArea.firstChild;
-    if (!firstP || !firstP.tagName || firstP.tagName.toLowerCase() !== 'p' || firstP.textContent !== '') break;
-    firstP.remove();
-  }
-  console.log('edited');
-
-  // Now click on the save button.
-  (await whenElementQuerySelectorAsync(document.body, '[data-testid="comment-save-button"]')).click();
-  console.log('saving.');
+  return modified;
 }
 
 function unmangleLink(link) {
