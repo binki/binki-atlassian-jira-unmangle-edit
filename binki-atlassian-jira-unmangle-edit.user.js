@@ -147,6 +147,14 @@ function unmangleAtlassianDocument(document) {
               throw new Error(`Unrecognized mark type: ${mark.type}`);
           }
         }
+        const newText = document.text.replace(/(https?:\/\/.*?)(?:$| |[^\w%\/=](?:$|\s))/gv, (match, p1) => {
+          return unmangleLink(p1);
+        });
+        if (newText !== document.text) {
+          console.log(`Replacing text with links “${document.text}” with “${newText}”`);
+          modified = true;
+          document.text = newText;
+        }
         break;
       default:
         throw new Error(`Unrecognized node type: ${document.type}`);
@@ -159,6 +167,13 @@ function unmangleAtlassianDocument(document) {
 }
 
 function unmangleLink(link) {
-  if (link.startsWith('https://nam10.safelinks.protection.outlook.com/')) return new URL(link).searchParams.get('url');
+  const url = (() => {
+    try {
+      return new URL(link);
+    } catch (e) {
+    }
+  })();
+  if (!url) return link;
+  if (link.startsWith('https://nam10.safelinks.protection.outlook.com/')) return url.searchParams.get('url');
 	return link;
 }
