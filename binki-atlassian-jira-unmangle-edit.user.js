@@ -14,7 +14,7 @@
   while (true) {
     const issue = await (await assertFetch(new URL(`/rest/api/3/issue/${encodeURIComponent(key)}`, document.documentURI))).json();
     let changeMade = false;
-    if (unmangleAtlassianDocumentAsync(issue.fields.description)) {
+    if (await unmangleAtlassianDocumentAsync(issue.fields.description)) {
       for (const [requestNoNotify, lastTry] of [
         [true, false], 
         [false, true],
