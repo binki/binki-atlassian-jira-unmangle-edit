@@ -4,6 +4,7 @@
 // @match https://*.atlassian.net/*
 // @homepageURL https://github.com/binki/binki-atlassian-jira-unmangle-edit
 // @require https://github.com/binki/binki-userscript-delay-async/raw/252c301cdbd21eb41fa0227c49cd53dc5a6d1e58/binki-userscript-delay-async.js
+// @require https://github.com/binki/binki-userscript-url-unfence/raw/18e57c68d5b47d73423c4f4869d075cfb9d8546d/binki-userscript-url-unfence.js
 // @require https://github.com/binki/binki-userscript-when-element-changed-async/raw/88cf57674ab8fcaa0e86bdf5209342ec7780739a/binki-userscript-when-element-changed-async.js
 // ==/UserScript==
 
@@ -13,7 +14,7 @@
   while (true) {
     const issue = await (await assertFetch(new URL(`/rest/api/3/issue/${encodeURIComponent(key)}`, document.documentURI))).json();
     let changeMade = false;
-    if (unmangleAtlassianDocument(issue.fields.description)) {
+    if (unmangleAtlassianDocumentAsync(issue.fields.description)) {
       for (const [requestNoNotify, lastTry] of [
         [true, false], 
         [false, true],
@@ -41,7 +42,7 @@
       }
     }
     for (const comment of issue.fields.comment.comments) {
-      if (unmangleAtlassianDocument(comment.body)) {
+      if (await unmangleAtlassianDocumentAsync(comment.body)) {
         for (const [requestNoNotify, lastTry] of [
           [true, false],
           [false, true],
@@ -79,7 +80,7 @@ async function assertFetch(url, options) {
   return response;
 }
 
-function unmangleAtlassianDocument(document) {
+async function unmangleAtlassianDocumentAsync(document) {
   let modified = false;
   try {
     switch (document.type) {
@@ -99,14 +100,14 @@ function unmangleAtlassianDocument(document) {
       case 'tableCell':
       case 'tableHeader':
         for (const contentItem of document.content) {
-          if (unmangleAtlassianDocument(contentItem)) {
+          if (await unmangleAtlassianDocumentAsync(contentItem)) {
             modified = true;
           }
         }
         break;
       case 'inlineCard':
         if (document.attrs && document.attrs.url) {
-          const newUrl = unmangleLink(document.attrs.url);
+          const newUrl = await binkiUserscriptUrlUnfenceAsync(document.attrs.url);
           if (newUrl !== document.attrs.url) {
             console.log(`Replacing inlineCard URL ${document.attrs.url} with ${newUrl}`);
             document.attrs.url = newUrl;
@@ -135,7 +136,7 @@ function unmangleAtlassianDocument(document) {
               break;
             case 'link':
               if (mark.attrs.href) {
-                const newHref = unmangleLink(mark.attrs.href);
+                const newHref = await binkiUserscriptUrlUnfenceAsync(mark.attrs.href);
                 if (newHref !== mark.attrs.href) {
                   modified = true;
                   console.log(`Replacing link “${mark.attrs.href}” with “${newHref}”.`);
@@ -147,8 +148,8 @@ function unmangleAtlassianDocument(document) {
               throw new Error(`Unrecognized mark type: ${mark.type}`);
           }
         }
-        const newText = document.text.replace(/(https?:\/\/.*?)(?:$| |[^\w%\/=](?:$|\s))/gv, (match, p1) => {
-          return unmangleLink(p1);
+        const newText = await replaceAsync(document.text, /(https?:\/\/.*?)(?:$| |[^\w%\/=](?:$|\s))/gv, async (match, p1) => {
+          return await binkiUserscriptUrlUnfenceAsync(p1);
         });
         if (newText !== document.text) {
           console.log(`Replacing text with links “${document.text}” with “${newText}”`);
@@ -160,20 +161,14 @@ function unmangleAtlassianDocument(document) {
         throw new Error(`Unrecognized node type: ${document.type}`);
     }
   } catch (ex) {
-    console.log('error editing document', document);
+    console.log('error editing document', document, ex);
     throw ex;
   }
   return modified;
 }
 
-function unmangleLink(link) {
-  const url = (() => {
-    try {
-      return new URL(link);
-    } catch (e) {
-    }
-  })();
-  if (!url) return link;
-  if (link.startsWith('https://nam10.safelinks.protection.outlook.com/')) return url.searchParams.get('url');
-	return link;
+async function replaceAsync(s, regExp, buildReplacementAsync) {
+  const match = regExp.exec(s);
+  if (!match) return s;
+  return await buildReplacementAsync.apply(this, match.concat(match.index, s, match.groups)) + await replaceAsync(s.substring(match.index + match[0].length), regExp, buildReplacementAsync);
 }
