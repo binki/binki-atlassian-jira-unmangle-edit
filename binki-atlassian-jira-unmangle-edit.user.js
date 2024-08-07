@@ -148,8 +148,8 @@ async function unmangleAtlassianDocumentAsync(document) {
               throw new Error(`Unrecognized mark type: ${mark.type}`);
           }
         }
-        const newText = await replaceAsync(document.text, /(https?:\/\/.*?)(?:$| |[^\w%\/=](?:$|\s))/gv, async (match, p1) => {
-          return await binkiUserscriptUrlUnfenceAsync(p1);
+        const newText = await replaceAsync(document.text, /(https?:\/\/.*?)($| |[^\w%\/=](?:$|\s))/gv, async (match, p1, p2) => {
+          return await binkiUserscriptUrlUnfenceAsync(p1) + p2;
         });
         if (newText !== document.text) {
           console.log(`Replacing text with links “${document.text}” with “${newText}”`);
@@ -170,5 +170,5 @@ async function unmangleAtlassianDocumentAsync(document) {
 async function replaceAsync(s, regExp, buildReplacementAsync) {
   const match = regExp.exec(s);
   if (!match) return s;
-  return await buildReplacementAsync.apply(this, match.concat(match.index, s, match.groups)) + await replaceAsync(s.substring(match.index + match[0].length), regExp, buildReplacementAsync);
+  return s.substring(0, match.index) + await buildReplacementAsync.apply(this, match.concat(match.index, s, match.groups)) + await replaceAsync(s.substring(match.index + match[0].length), regExp, buildReplacementAsync);
 }
