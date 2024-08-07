@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name binki-atlassian-jira-unmangle-edit
-// @version 2.2.1
+// @version 2.2.2
 // @match https://*.atlassian.net/*
 // @homepageURL https://github.com/binki/binki-atlassian-jira-unmangle-edit
 // @require https://github.com/binki/binki-userscript-delay-async/raw/252c301cdbd21eb41fa0227c49cd53dc5a6d1e58/binki-userscript-delay-async.js
