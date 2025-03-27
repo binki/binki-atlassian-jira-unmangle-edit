@@ -87,6 +87,16 @@ async function unmangleAtlassianDocumentAsync(document) {
   let modified = false;
   try {
     switch (document.type) {
+      case 'paragraph':
+        // content is optional in paragraph.
+        if (document.content) {
+          for (const contentItem of document.content) {
+            if (await unmangleAtlassianDocumentAsync(contentItem)) {
+              modified = true;
+            }
+          }
+        }
+        break;
       case 'blockquote':
       case 'bulletList':
       case 'codeBlock':
@@ -97,7 +107,6 @@ async function unmangleAtlassianDocumentAsync(document) {
       case 'panel':
       case 'doc':
       case 'expand':
-      case 'paragraph':
       case 'table':
       case 'tableRow':
       case 'tableCell':
