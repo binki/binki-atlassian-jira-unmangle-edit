@@ -4,7 +4,7 @@
 // @match https://*.atlassian.net/*
 // @homepageURL https://github.com/binki/binki-atlassian-jira-unmangle-edit
 // @require https://github.com/binki/binki-userscript-delay-async/raw/252c301cdbd21eb41fa0227c49cd53dc5a6d1e58/binki-userscript-delay-async.js
-// @require https://github.com/binki/binki-userscript-url-unfence/raw/5414bd07693179b3c5c549c7ff750df89a84b23a/binki-userscript-url-unfence.js
+// @require https://github.com/binki/binki-userscript-url-unfence/raw/e33378de85ef4386aa981ed1f1a287063d16c4a4/binki-userscript-url-unfence.js
 // @require https://github.com/binki/binki-userscript-when-element-changed-async/raw/88cf57674ab8fcaa0e86bdf5209342ec7780739a/binki-userscript-when-element-changed-async.js
 // @require https://github.com/binki/binki-userscript-when-element-query-selector-async/raw/0a9c204bdc304a9e82f1c31d090fdfdf7b554930/binki-userscript-when-element-query-selector-async.js
 // ==/UserScript==
