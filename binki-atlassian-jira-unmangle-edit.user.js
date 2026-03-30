@@ -131,6 +131,8 @@ async function unmangleAtlassianDocumentAsync(document) {
       case 'hardBreak':
       case 'media':
       case 'mediaGroup':
+      // Appears to just be an ID reference with no actual user content in the document itself.
+      case 'mediaInline':
       case 'mention':
       case 'rule':
         break;
