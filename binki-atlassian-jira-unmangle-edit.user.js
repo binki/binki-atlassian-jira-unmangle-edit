@@ -128,6 +128,7 @@ async function unmangleAtlassianDocumentAsync(document) {
           }
         }
         break;
+      case 'date':
       case 'emoji':
       case 'hardBreak':
       case 'media':
